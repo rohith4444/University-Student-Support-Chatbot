@@ -1,45 +1,103 @@
+---
+title: UC Student Support Chatbot
+emoji: 🎓
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+sdk_version: 6.30.0
+app_file: app.py
+pinned: false
+---
 
-# University Student Support Chatbot
+# University of the Cumberlands Student Support Chatbot
 
 ## Project Description
 
-The University Student Support Chatbot is a web-based
-application designed to help university students access
-common academic and administrative information.
+The University of the Cumberlands Student Support Chatbot is a
+Gradio web application that helps University of the Cumberlands
+students find routine academic and administrative information.
 
-It provides guidance on assignment deadlines, academic
-advising, course registration, financial aid, library
-services, and technical support.
+It answers questions about assignment deadlines, academic
+expectations, academic advising, course registration, financial
+aid, library services, IT support, university tools, and student
+support services, and points students to official university
+resources.
+
+The chatbot runs a free, open-source language model
+(Qwen2.5-0.5B-Instruct) from Hugging Face. No paid API or API key
+is needed. It runs on a typical laptop and can be hosted for free
+on Hugging Face Spaces.
+
+This is a student project for MSAI 631. It is not an official
+University of the Cumberlands service.
+
+## How the Chatbot Works
+
+The chatbot uses retrieval-augmented generation (RAG):
+
+1. The student asks a question in the Gradio chat window.
+2. TF-IDF and cosine similarity (scikit-learn) find the three most
+   relevant sections in the knowledge files:
+   - cumberlands_info.md: official University of the Cumberlands
+     offices, services, and links
+   - course_schedules/: assignment due dates for added courses
+3. Those sections, a system prompt, and the recent chat history are
+   sent to the Qwen language model, which runs locally.
+4. The model writes a short answer based only on that information.
+5. The answer is fact-checked in code before it is shown.
+
+The system prompt tells the model to:
+
+- Share only links and contacts that appear in the knowledge files
+- Give an assignment due date only if it is in a course schedule;
+  otherwise, direct the student to the course page and syllabus
+- Never ask for passwords, student IDs, or personal information
+- Politely decline questions unrelated to student support
+
+Because small models do not always follow instructions, the code
+also enforces these rules:
+
+- Fact-check: every link, email, phone number, and dollar amount in
+  the answer must appear in the knowledge files, and every date must
+  belong to the assignment and course the student asked about.
+  Otherwise, the answer is replaced with a message pointing to the
+  most relevant official office.
+- If no related university information is found, the chatbot
+  replies that it can only help with student questions.
+- If a message seems to contain a password or student ID, the
+  chatbot warns the student not to share it.
+- Answers that hit the length limit are trimmed to the last full
+  sentence.
 
 ## Technologies Used
 
 - Python
-- Flask
-- HTML
-- CSS
-- JavaScript
-- Scikit-learn
-- TF-IDF Vectorization
-- Cosine Similarity
+- Gradio (chat interface)
+- Hugging Face Transformers and PyTorch (runs the language model)
+- Qwen2.5-0.5B-Instruct (open-source language model, Apache 2.0)
+- Scikit-learn (TF-IDF and cosine similarity for retrieval)
+- Hugging Face Spaces (free hosting)
 
 ## System Requirements
 
 - Windows, macOS, or Linux
-- Python 3.14 (tested with Python 3.14.2)
-- Internet connection for the initial dependency installation
+- Python 3.10 or newer (tested with Python 3.11)
+- About 8 GB of RAM
+- About 5 GB of free disk space (packages and model)
+- Internet connection for the first run (to download packages and
+  the model); after that, it runs offline
 - A modern web browser
 
 ## Installation Instructions
 
 1. Download or clone this project.
-2. Open the project folder in Visual Studio Code.
-3. Open a terminal in the main project folder.
+2. Open a terminal in the main project folder.
 
-4. Create a Python virtual environment:
+3. Create a Python virtual environment:
 
    python -m venv .venv
 
-5. Activate the environment on Windows CMD:
+4. Activate the environment on Windows CMD:
 
    .venv\Scripts\activate.bat
 
@@ -47,98 +105,100 @@ services, and technical support.
 
    source .venv/bin/activate
 
-6. Install the dependencies:
+5. Install the dependencies:
 
    python -m pip install -r requirements.txt
 
-7. Start the application:
+6. Start the application:
 
    python app.py
 
-8. Open the browser and visit:
+   The first start downloads the model (about 1 GB) and can take
+   a few minutes.
 
-   http://127.0.0.1:5000
+7. Open the browser and visit:
+
+   http://127.0.0.1:7860
+
+Press Ctrl+C in the terminal to stop the application.
+
+On a fast laptop, you can open chatbot.py and change MODEL_NAME to
+"Qwen/Qwen2.5-1.5B-Instruct" for better-worded but slower answers
+(about 3 GB download; roughly 25-45 seconds per answer in testing,
+compared with roughly 6-20 seconds for the default model).
+
+## Running on Hugging Face Spaces
+
+1. Create a free account at https://huggingface.co.
+2. Select New Space, choose Gradio as the SDK and the free
+   CPU Basic hardware.
+3. Upload app.py, chatbot.py, requirements.txt, README.md,
+   cumberlands_info.md, and the course_schedules folder.
+4. The Space builds automatically and shows the chatbot when ready.
 
 ## How to Use the Chatbot
 
-1. Open the chatbot webpage.
-2. Enter a question into the text field.
-3. Click Send or press Enter.
-4. Read the chatbot's response.
-5. Continue asking questions as needed.
+1. Open the chatbot page.
+2. Type a question, or click one of the example questions.
+3. Press Enter and read the answer.
+4. Ask follow-up questions as needed.
 
 ## Example Questions
 
-- How do I register for classes?
+- How do I contact financial aid?
+- When is the MSAI 631 results report due?
 - How do I reset my password?
-- Where can I find scholarships?
-- How do I contact my academic advisor?
-- When is my assignment due?
-- How do I access library resources?
+- How do I access library databases?
+- Who can help me plan my courses?
 
-## How the Chatbot Works
+## Updating the Knowledge
 
-The chatbot uses TF-IDF vectorization and cosine
-similarity to compare a student's question with
-predefined example questions.
-
-The system selects the closest matching question
-and returns its associated answer when the
-similarity score reaches the configured threshold.
-
-When no suitable match is identified, the chatbot
-returns a fallback response.
+- To update university information, edit cumberlands_info.md.
+  Each office is a section starting with "## ".
+- To add a course schedule, add a file to course_schedules/
+  with one "## " section per assignment and its due date.
+- Restart the application after editing these files.
 
 ## Project Structure
 
-app.py - Flask application and API routes
+app.py - Gradio chat interface
 
-chatbot.py - Question matching and response logic
+chatbot.py - Retrieval, system prompt, and language model
+
+cumberlands_info.md - University of the Cumberlands offices and links
+
+course_schedules/ - Assignment due dates for added courses
 
 requirements.txt - Python dependencies
 
-templates/index.html - Chatbot webpage
-
-static/style.css - User interface styling
-
-static/script.js - Browser interaction logic
-
 ## Limitations
 
-- The chatbot uses a predefined knowledge base.
-- It does not generate new answers using a large language model.
-- It cannot access private student information.
-- It does not retrieve live university deadlines.
-- Its answers should be verified using official university resources.
-- Some differently worded questions may produce incorrect matches.
+- Answers are general guidance. Students should confirm important
+  information with the university.
+- The chatbot only knows the information in the knowledge files.
+  It cannot access student accounts, grades, or live university
+  systems.
+- Due dates are only available for the courses that were added.
+- A small language model can still give an incorrect or incomplete
+  answer. The fact-check catches invented links, contacts, and
+  dates, but not general wording mistakes (for example, made-up
+  website steps or placeholder text).
+- Answers take a few seconds on a laptop CPU or a free Space.
+- A free Space goes to sleep when unused and takes about a minute
+  to start again.
 
-## Testing
+## Version History
 
-The application was tested locally using questions
-about deadlines, registration, financial aid,
-technical support, and library services.
-
-Testing also included unrelated questions to
-evaluate the fallback response.
-
-## Security
-
-This application is a local academic prototype.
-It does not require API keys or student credentials.
-
-The Flask development server is not intended
-for production deployment.
+- Version 1: Flask web app with TF-IDF question matching against
+  predefined answers (no language model).
+- Version 2 (current): Gradio app with an open-source language model
+  and retrieval over University of the Cumberlands information,
+  following the instructor's guidance to use free resources
+  instead of paid APIs.
 
 ## Academic Use and Credits
 
-This project was developed for the
-University of the Cumberlands
-Artificial Intelligence for Human-Computer Interaction
-course (MSAI-631).
-
-ChatGPT was used to assist with code development,
-debugging, explanations, and documentation.
-
-The team reviewed, adapted, and tested the code.
-Further information about software libraries
-and reused-code credits is provided separately.
+This project was developed for the University of the Cumberlands
+Artificial Intelligence for Human-Computer Interaction course
+(MSAI 631). Reused code, libraries, and AI assistance are
+credited in CREDITS.md.

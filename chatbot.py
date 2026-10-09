@@ -1,180 +1,307 @@
 
+import re
+from pathlib import Path
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-# Example student questions and corresponding responses.
-knowledge_base = [
-    {
-        "questions": [
-            "hello",
-            "hi",
-            "hey",
-            "good morning",
-            "can you help me"
-        ],
-        "answer": (
-            "Hello! I can assist with academic deadlines, "
-            "course registration, financial aid, academic "
-            "advising, library services, and IT support."
-        )
-    },
-    {
-        "questions": [
-            "how do I check assignment deadlines",
-            "when is my assignment due",
-            "where can I find my course deadlines",
-            "how do I see my academic calendar",
-            "when should I submit my homework"
-        ],
-        "answer": (
-            "Check your course assignments page or calendar "
-            "in your learning management system (LMS). "
-            "For official dates, consult your university's "
-            "academic calendar."
-        )
-    },
-    {
-        "questions": [
-            "how do I contact my academic advisor",
-            "where can I find academic advising",
-            "how can I get course planning help",
-            "I need help choosing classes",
-            "how do I schedule an advising appointment"
-        ],
-        "answer": (
-            "Contact your assigned academic advisor or "
-            "the university academic advising office. "
-            "You can usually find advising information "
-            "through your official student portal."
-        )
-    },
-    {
-        "questions": [
-            "how do I apply for financial aid",
-            "where can I find scholarships",
-            "how do I pay my tuition",
-            "I need help with university fees",
-            "where can I get student financial assistance"
-        ],
-        "answer": (
-            "For financial aid, tuition, and scholarships, "
-            "visit your university's financial aid office "
-            "or student portal. Check the official website "
-            "for application requirements and deadlines."
-        )
-    },
-    {
-        "questions": [
-            "how do I register for classes",
-            "where can I enroll in courses",
-            "how can I complete course registration",
-            "how do I add a course",
-            "how do I sign up for classes"
-        ],
-        "answer": (
-            "Sign in to your student portal and open the "
-            "course registration section. Confirm course "
-            "requirements and availability with your "
-            "academic advisor when necessary."
-        )
-    },
-    {
-        "questions": [
-            "how do I reset my password",
-            "I cannot log into my student account",
-            "I forgot my student portal password",
-            "where can I get technical support",
-            "my university login is not working"
-        ],
-        "answer": (
-            "For password, login, and technical issues, "
-            "contact your university's IT help desk. "
-            "Use the official password reset service "
-            "provided by your institution."
-        )
-    },
-    {
-        "questions": [
-            "where is the university library",
-            "how do I access library resources",
-            "where can I find research articles",
-            "how do I borrow library books",
-            "how can I access academic journals"
-        ],
-        "answer": (
-            "Visit your university library website for "
-            "academic databases, research articles, "
-            "books, and citation support. Contact "
-            "library staff for additional assistance."
-        )
-    },
-    {
-        "questions": [
-            "where can I get student support",
-            "how do I contact student services",
-            "what support services are available",
-            "where can I find university assistance",
-            "how do I get help as a student"
-        ],
-        "answer": (
-            "University support services may include "
-            "academic advising, counseling, financial "
-            "aid, library assistance, and IT support. "
-            "Visit the official university website "
-            "for contact information."
-        )
+# Free, open-source instruction model from Hugging Face (Apache 2.0).
+# Change to "Qwen/Qwen2.5-1.5B-Instruct" for better-worded but slower answers.
+MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+
+BASE_DIR = Path(__file__).parent
+KNOWLEDGE_FILES = [BASE_DIR / "cumberlands_info.md"] + sorted(
+    (BASE_DIR / "course_schedules").glob("*.md")
+)
+
+# Number of knowledge sections passed to the model for each question.
+TOP_SECTIONS = 3
+
+# Number of earlier chat messages the model sees.
+HISTORY_MESSAGES = 6
+
+SYSTEM_PROMPT = """You are the University of the Cumberlands Student Support Chatbot,
+a virtual assistant that helps University of the Cumberlands students with
+routine academic and administrative questions.
+
+You help with: assignment deadlines, academic expectations, academic
+advising, course registration, financial aid and tuition, library services,
+IT support and logins, university tools (course site, student portal,
+email), and student support services.
+
+Rules:
+- Use only the University of the Cumberlands information provided below.
+  Only share links, emails, and phone numbers that appear in it. Never
+  invent dates, fees, names, links, contacts, or policies.
+- Only give an assignment due date if that exact assignment and its date
+  appear in the information below. Otherwise, tell the student to check
+  their course page and syllabus.
+- If the information below does not answer the question, say so and direct
+  the student to the most relevant office listed below.
+- Never ask for or accept passwords, student ID numbers, or other personal
+  information. You cannot see student accounts or grades. If a student
+  shares a password or student ID, remind them never to share these in a
+  chat.
+- If a question is unrelated to university student support, reply only:
+  "I can only help with University of the Cumberlands student questions,
+  such as deadlines, advising, registration, financial aid, the library,
+  and IT support."
+- Keep answers short (under 120 words), friendly, and in plain language."""
+
+# Maximum length of a generated answer, in tokens.
+MAX_NEW_TOKENS = 300
+
+OFF_TOPIC_MESSAGE = (
+    "I can only help with University of the Cumberlands student "
+    "questions, such as deadlines, advising, registration, financial "
+    "aid, the library, and IT support."
+)
+
+PRIVACY_WARNING = (
+    "Please never share your password or student ID in a chat."
+)
+
+CANNOT_CONFIRM = (
+    "I couldn't confirm that from official University of the "
+    "Cumberlands information."
+)
+
+DEADLINE_HINT = (
+    "For assignment due dates, please check your course page and "
+    "syllabus on Blackboard (iLearn): https://ucumberlands.blackboard.com/"
+)
+
+DEFAULT_RESOURCE = (
+    "the Current Students page: https://www.ucumberlands.edu/current-students"
+)
+
+MONTHS = (
+    "January|February|March|April|May|June|July|August|September|"
+    "October|November|December"
+)
+
+
+def load_sections():
+    """Split the knowledge files into sections, one per '## ' heading."""
+
+    sections = []
+
+    for path in KNOWLEDGE_FILES:
+        text = path.read_text(encoding="utf-8")
+
+        # The text before the first '## ' heading is the file's introduction.
+        for part in text.split("\n## ")[1:]:
+            sections.append("## " + part.strip())
+
+    return sections
+
+
+def extract_facts(text):
+    """Find links, emails, phone numbers, dates, and dollar amounts."""
+
+    facts = set()
+
+    for url in re.findall(r"https?://[^\s)\]>\"']+", text):
+        facts.add(url.rstrip("/.,;:").lower())
+
+    for email in re.findall(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", text):
+        facts.add(email.lower())
+
+    for phone in re.findall(r"\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}", text):
+        facts.add(re.sub(r"\D", "", phone))
+
+    for amount in re.findall(r"\$\d[\d,]*(?:\.\d+)?", text):
+        facts.add(amount)
+
+    return facts
+
+
+def extract_dates(text):
+    """Find dates such as 'October 11' or '10/11/2026'."""
+
+    dates = {
+        f"{month} {int(day)}"
+        for month, day in re.findall(rf"({MONTHS})\s+(\d{{1,2}})", text)
     }
-]
+    dates.update(re.findall(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b", text))
+
+    return dates
 
 
-# Prepare example questions for machine learning.
-example_questions = []
-answers = []
+def find_course_codes(text):
+    """Find course codes such as 'MSAI 631' and return them as 'MSAI631'."""
 
-for item in knowledge_base:
-    for question in item["questions"]:
-        example_questions.append(question)
-        answers.append(item["answer"])
+    return {
+        f"{letters.upper()}{digits}"
+        for letters, digits in re.findall(r"\b([A-Za-z]{2,5})\s?(\d{3})\b", text)
+    }
 
 
-# Convert example questions into numerical representations.
+def date_is_supported(date, question):
+    """A date is allowed only if it comes from a schedule entry that the
+    question is about (same course code and assignment name)."""
+
+    question_words = set(re.findall(r"[a-z0-9]+", question.lower()))
+    question_codes = find_course_codes(question)
+
+    for section in sections:
+        if date not in extract_dates(section):
+            continue
+
+        heading = section.splitlines()[0]
+        heading_codes = find_course_codes(heading)
+
+        if question_codes and not question_codes & heading_codes:
+            continue
+
+        # Assignment name words, e.g. "results" and "report".
+        name_words = set(re.findall(r"[a-z]+", heading.lower()))
+        name_words -= {"msai", "group", "project", "course"}
+
+        if name_words & question_words:
+            return True
+
+    return False
+
+
+# Prepare the retrieval step (TF-IDF over the knowledge sections).
+sections = load_sections()
+
+# Every fact the chatbot is allowed to state.
+known_facts = extract_facts("\n".join(sections))
+
 vectorizer = TfidfVectorizer(
     lowercase=True,
     stop_words="english",
     ngram_range=(1, 2)
 )
 
-question_vectors = vectorizer.fit_transform(example_questions)
+section_vectors = vectorizer.fit_transform(sections)
 
 
-def get_response(message):
-    """Find the closest matching university support answer."""
+# Load the language model once when the app starts.
+# The first run downloads the model from Hugging Face.
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, dtype="auto")
+
+
+def find_relevant_sections(question):
+    """Return the knowledge sections most similar to the question."""
+
+    question_vector = vectorizer.transform([question])
+    similarities = cosine_similarity(question_vector, section_vectors)[0]
+
+    best_indexes = similarities.argsort()[::-1][:TOP_SECTIONS]
+
+    return [sections[i] for i in best_indexes if similarities[i] > 0]
+
+
+def safe_answer(question, relevant_sections):
+    """Answer used when the model states a fact that cannot be verified."""
+
+    resource = DEFAULT_RESOURCE
+
+    # Point to the first relevant section that has an official link.
+    for section in relevant_sections:
+        link = re.search(r"^Link: (\S+)", section, re.MULTILINE)
+        if link:
+            name = section.splitlines()[0].removeprefix("## ")
+            resource = f"{name}: {link.group(1)}"
+            break
+
+    answer = f"{CANNOT_CONFIRM} Please check {resource}"
+
+    if re.search(r"\b(due|deadline|exam|assignment|homework)", question, re.I):
+        answer += f"\n\n{DEADLINE_HINT}"
+
+    return answer
+
+
+def get_response(message, history):
+    """Answer a student's question, adding a privacy warning when the
+    student appears to share a password or student ID."""
 
     if not isinstance(message, str) or not message.strip():
         return "Please enter a question so I can help you."
 
-    # Convert the student's question into a TF-IDF vector.
-    user_vector = vectorizer.transform([message])
+    answer = generate_answer(message, history)
 
-    # Compare it against the example questions.
-    similarities = cosine_similarity(
-        user_vector,
-        question_vectors
-    )[0]
+    if re.search(r"\b(password|passcode|student id|id number)\s*(is|:|=)",
+                 message, re.I):
+        answer = f"{PRIVACY_WARNING}\n\n{answer}"
 
-    best_match_index = similarities.argmax()
-    best_score = similarities[best_match_index]
+    return answer
 
-    # Avoid guessing when the question is not recognized.
-    if best_score < 0.25:
-        return (
-            "I'm sorry, I couldn't confidently identify "
-            "your question. Please ask about deadlines, "
-            "registration, advising, financial aid, "
-            "technical support, or library services. "
-            "For other questions, contact your university's "
-            "student support office."
+
+def generate_answer(message, history):
+    """Answer a student's question using the retrieved information."""
+
+    # Search with the previous question too, so follow-ups such as
+    # "What is their phone number?" find the right office.
+    previous_questions = [
+        item["content"] for item in history
+        if item.get("role") == "user" and isinstance(item.get("content"), str)
+    ]
+    search_text = " ".join(previous_questions[-1:] + [message])
+
+    relevant_sections = find_relevant_sections(search_text)
+
+    # No related university information: the question is off-topic.
+    if not relevant_sections:
+        return OFF_TOPIC_MESSAGE
+
+    context = "\n\n".join(relevant_sections)
+
+    messages = [{
+        "role": "system",
+        "content": (
+            f"{SYSTEM_PROMPT}\n\n"
+            f"University of the Cumberlands information:\n\n{context}"
         )
+    }]
 
-    return answers[best_match_index]
+    # Include recent chat history so follow-up questions make sense.
+    for item in history[-HISTORY_MESSAGES:]:
+        if isinstance(item.get("content"), str):
+            messages.append({"role": item["role"], "content": item["content"]})
+
+    messages.append({"role": "user", "content": message})
+
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        return_tensors="pt",
+        return_dict=True
+    )
+
+    output = model.generate(
+        **inputs,
+        max_new_tokens=MAX_NEW_TOKENS,
+        do_sample=False
+    )
+
+    # Decode only the newly generated tokens.
+    new_tokens = output[0][inputs["input_ids"].shape[1]:]
+
+    answer = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+
+    # If the answer hit the length limit, cut it at the last full sentence.
+    if len(new_tokens) >= MAX_NEW_TOKENS:
+        cut = max(answer.rfind("\n"), answer.rfind(". "))
+        if cut > 0:
+            answer = answer[:cut + 1].strip()
+
+    # Fact-check: every link, email, phone number, and amount must appear
+    # in the knowledge files, and every date must belong to the assignment
+    # the student asked about.
+    unsupported_dates = [
+        date for date in extract_dates(answer)
+        if not date_is_supported(date, search_text)
+    ]
+
+    if not extract_facts(answer) <= known_facts or unsupported_dates:
+        return safe_answer(message, relevant_sections)
+
+    return answer
