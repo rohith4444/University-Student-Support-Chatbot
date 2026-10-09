@@ -1,7 +1,12 @@
 
+import os
 import re
 from pathlib import Path
 
+# Hugging Face ZeroGPU support. It must be imported before torch, and it
+# has no effect when the app runs on a laptop.
+import spaces
+import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -186,6 +191,11 @@ section_vectors = vectorizer.fit_transform(sections)
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, dtype="auto")
 
+# Use the GPU on a ZeroGPU Space (or a laptop with an NVIDIA GPU),
+# otherwise the CPU.
+if os.getenv("SPACES_ZERO_GPU") or torch.cuda.is_available():
+    model.to("cuda")
+
 
 def find_relevant_sections(question):
     """Return the knowledge sections most similar to the question."""
@@ -196,6 +206,21 @@ def find_relevant_sections(question):
     best_indexes = similarities.argsort()[::-1][:TOP_SECTIONS]
 
     return [sections[i] for i in best_indexes if similarities[i] > 0]
+
+
+@spaces.GPU(duration=60)
+def run_model(inputs):
+    """Generate an answer. On a ZeroGPU Space, a GPU is used only here."""
+
+    inputs = inputs.to(model.device)
+
+    output = model.generate(
+        **inputs,
+        max_new_tokens=MAX_NEW_TOKENS,
+        do_sample=False
+    )
+
+    return output.cpu()
 
 
 def safe_answer(question, relevant_sections):
@@ -276,11 +301,7 @@ def generate_answer(message, history):
         return_dict=True
     )
 
-    output = model.generate(
-        **inputs,
-        max_new_tokens=MAX_NEW_TOKENS,
-        do_sample=False
-    )
+    output = run_model(inputs)
 
     # Decode only the newly generated tokens.
     new_tokens = output[0][inputs["input_ids"].shape[1]:]

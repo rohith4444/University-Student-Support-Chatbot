@@ -4,12 +4,16 @@ emoji: 🎓
 colorFrom: blue
 colorTo: indigo
 sdk: gradio
-sdk_version: 6.30.0
+sdk_version: "6.30.0"
+python_version: "3.12"
 app_file: app.py
 pinned: false
 ---
 
 # University of the Cumberlands Student Support Chatbot
+
+- Live demo (Hugging Face Space): https://huggingface.co/spaces/MRR24/uc-student-support-chatbot
+- Source code (GitHub): https://github.com/rohith4444/University-Student-Support-Chatbot
 
 ## Project Description
 
@@ -76,7 +80,7 @@ also enforces these rules:
 - Hugging Face Transformers and PyTorch (runs the language model)
 - Qwen2.5-0.5B-Instruct (open-source language model, Apache 2.0)
 - Scikit-learn (TF-IDF and cosine similarity for retrieval)
-- Hugging Face Spaces (free hosting)
+- Hugging Face Spaces with ZeroGPU (free hosting) and the spaces package
 
 ## System Requirements
 
@@ -130,11 +134,16 @@ compared with roughly 6-20 seconds for the default model).
 ## Running on Hugging Face Spaces
 
 1. Create a free account at https://huggingface.co.
-2. Select New Space, choose Gradio as the SDK and the free
-   CPU Basic hardware.
+2. Select New Space, choose Gradio as the SDK and ZeroGPU
+   hardware (free accounts can host up to 2 ZeroGPU Spaces).
 3. Upload app.py, chatbot.py, requirements.txt, README.md,
-   cumberlands_info.md, and the course_schedules folder.
+   CREDITS.md, cumberlands_info.md, and the course_schedules folder.
 4. The Space builds automatically and shows the chatbot when ready.
+
+ZeroGPU requires a supported PyTorch version (2.13.0 is used here)
+and the spaces package. The @spaces.GPU decorator in chatbot.py
+requests a GPU only while an answer is generated, and has no effect
+when the app runs on a laptop.
 
 ## How to Use the Chatbot
 
@@ -183,7 +192,10 @@ requirements.txt - Python dependencies
   answer. The fact-check catches invented links, contacts, and
   dates, but not general wording mistakes (for example, made-up
   website steps or placeholder text).
-- Answers take a few seconds on a laptop CPU or a free Space.
+- Answers take roughly 6-20 seconds on a laptop CPU.
+- On Hugging Face Spaces, ZeroGPU has a daily GPU quota per visitor
+  (about 2 minutes without a Hugging Face login, 5 minutes with a
+  free account).
 - A free Space goes to sleep when unused and takes about a minute
   to start again.
 

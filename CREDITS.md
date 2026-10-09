@@ -89,6 +89,12 @@ Website: https://pytorch.org/
 
 Runs the model computations used by Transformers.
 
+### Hugging Face spaces package (ZeroGPU)
+Website: https://huggingface.co/docs/hub/spaces-zerogpu
+
+Provides the @spaces.GPU decorator that requests a shared GPU on
+Hugging Face Spaces while an answer is generated.
+
 ### Scikit-learn
 Website: https://scikit-learn.org/
 
